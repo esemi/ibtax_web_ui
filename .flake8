@@ -1,0 +1,11 @@
+[isort]
+line_length = 125
+
+[flake8]
+max-line-length = 125
+
+ignore =
+    WPS305, # f-strings
+    D101, # Missing docstring in public class
+    D102, # Missing docstring in public method
+    D103, # Missing docstring in public function

@@ -1,38 +1,21 @@
+"""All parts needed for handle requests."""
+
 import logging
 import pathlib
-import time
 
 from starlette.applications import Starlette
-from starlette.middleware import Middleware
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import Response
 from starlette.routing import Route
 from starlette.templating import Jinja2Templates
+from timing_asgi import TimingClient, TimingMiddleware
+from timing_asgi.integrations import StarletteScopeToName
+
+html_fir = pathlib.Path(__file__).parent.joinpath('templates').absolute()
+html_templates = Jinja2Templates(directory=html_fir)
 
 
-html_templates = Jinja2Templates(directory=pathlib.Path(__file__).parent.joinpath('templates').absolute())
-
-
-class RequestLogMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint):
-        start_time = time.time()
-
-        response: Response = await call_next(request)
-
-        wall_timing = time.time() - start_time
-        client_ip = request.client.host
-        endpoint = request.get('endpoint')
-        endpoint_name = 'unknown'
-        if endpoint:
-            endpoint_name = endpoint.__name__
-
-        path = request.get('path')
-        method = request.get('method')
-        status_code = response.status_code
-
-        logging.info(f'request_stats: {endpoint_name=} {method=} {path=} {wall_timing=} {client_ip=} {status_code=}')
-        return response
+class PrintTimings(TimingClient):
+    def timing(self, metric_name, timing, tags):
+        logging.info(f'{metric_name=} {timing=}, {tags=}')
 
 
 async def index_html(request):
@@ -47,12 +30,13 @@ routes = [
     Route('/', index_html, methods=['GET'], name='homepage'),
 ]
 
-middleware = [
-    Middleware(RequestLogMiddleware),
-]
+app = Starlette(debug=False, routes=routes)
 
-
-app = Starlette(debug=False, routes=routes, middleware=middleware)
+app.add_middleware(
+    TimingMiddleware,
+    client=PrintTimings(),
+    metric_namer=StarletteScopeToName(prefix='', starlette_app=app),
+)
 
 app_log = logging.StreamHandler()
 formatter = logging.Formatter('%(asctime)s %(process)s %(levelname)s %(name)s %(message)s')  # noqa: WPS323
@@ -62,5 +46,3 @@ logger = logging.getLogger()
 logger.handlers = []
 logger.addHandler(app_log)
 logger.setLevel(logging.INFO)
-
-__all__ = ['app']
